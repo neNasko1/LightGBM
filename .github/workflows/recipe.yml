@@ -1,0 +1,30 @@
+name: Package
+
+on: [push]
+
+jobs:
+  build:
+    name: Rattler build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target-platform: linux-64
+          # Linking fails for Windows
+          # - os: windows-latest
+          #   target-platform: win-64
+          - os: macos-latest
+            target-platform: osx-64
+          - os: macos-14
+            target-platform: osx-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build conda package
+        uses: prefix-dev/rattler-build-action@v0.2.11
+        with:
+          # needs to be unique for each matrix entry
+          artifact-name: package-${{ matrix.target-platform }}
+          build-args: --target-platform ${{ matrix.target-platform }}${{ matrix.target-platform == 'linux-aarch64' && ' --no-test' || '' }} --variant-config ./conda.recipe/variant_config.yaml  -v
