@@ -103,3 +103,4 @@ create_isolated_source_dir() {
 create_isolated_source_dir
 
 python -m build --wheel --outdir ../dist --config-setting=cmake.define.USE_OPENMP=OFF lightgbm-python --no-isolation
+pip install dist/*.whl
