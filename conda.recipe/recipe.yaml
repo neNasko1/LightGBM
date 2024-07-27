@@ -6,7 +6,7 @@ package:
   version: ${{ version }}
 
 source:
-  path: ../
+  git: https://github.com/neNasko1/LightGBM.git
 
 requirements:
   build:
