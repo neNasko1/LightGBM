@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: 'recur'
+          submodules: 'recursive'
       - name: Build conda package
         uses: prefix-dev/rattler-build-action@v0.2.11
         with:
