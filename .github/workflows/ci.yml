@@ -1,0 +1,36 @@
+name: CI
+
+on: [push]
+
+jobs:
+  build:
+    name: Build package
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target-platform: linux-64
+          # - os: windows-latest
+          #   target-platform: win-64
+          - os: macos-latest
+            target-platform: osx-64
+          - os: macos-14
+            target-platform: osx-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: prefix-dev/setup-pixi@v0.8.1
+      - run: |
+          if [[ "${RUNNER_OS}" == macOS ]] ; then
+              export RUSTFLAGS="-C link-args=-Wl,-rpath,${CONDA_PREFIX}/lib -L${CONDA_PREFIX}/lib"
+          else
+              export RUSTFLAGS="-C link-arg=-Wl,-rpath-link,${CONDA_PREFIX}/lib -L${CONDA_PREFIX}/lib"
+          fi
+          cargo fmt -- --check
+          cargo clippy --bins --tests --examples --all -- -D warnings
+          cargo test --all-features --release -j 1
+        shell: pixi run bash -e {0}
+        env:
+          RUST_BACKTRACE: 1

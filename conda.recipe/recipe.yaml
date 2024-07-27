@@ -1,0 +1,31 @@
+context:
+  version: "0.1.0"
+
+package:
+  name: qc-lightgbm
+  version: ${{ version }}
+
+source:
+  path: ../
+
+requirements:
+  build:
+    - ${{ compiler('cxx') }}
+    - python>=3.8
+    - pip
+    - cmake
+  host:
+    - python>=3.8
+    - pip
+  run:
+    - python>=3.8
+    - pip
+
+about:
+  homepage: https://github.com/cbourjau/ort
+  license: MIT
+  license_file:
+    - LICENSE
+    - THIRDPARTY.yml
+  description: "A PyO3 based wrapper around onnxruntime with the goal of becoming an independent ONNX runtime."
+  summary: "A performant and user friendly ONNX runtime (based on onnxruntime)."
