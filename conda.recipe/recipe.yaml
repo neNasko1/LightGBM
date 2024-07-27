@@ -6,7 +6,7 @@ package:
   version: ${{ version }}
 
 source:
-  git: https://github.com/neNasko1/LightGBM.git
+  path: "../"
 
 requirements:
   build:
@@ -25,6 +25,11 @@ requirements:
     - python>=3.11
     - pip
     - scikit-learn
+
+build:
+  script:
+    - echo "Here"
+    - sh ./build-python.sh install --nomp --no-isolation
 
 about:
   license: MIT
