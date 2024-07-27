@@ -28,7 +28,6 @@ requirements:
 
 build:
   script:
-    - echo "Here"
     - sh ./build-python.sh install --nomp --no-isolation
 
 about:
