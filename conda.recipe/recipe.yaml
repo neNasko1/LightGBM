@@ -11,21 +11,25 @@ source:
 requirements:
   build:
     - ${{ compiler('cxx') }}
-    - python>=3.8
+    - python>=3.11
     - pip
     - cmake
+    - python-build>=0.10
+    - scikit-learn
+    - scikit-build-core
   host:
-    - python>=3.8
+    - python>=3.11
     - pip
+    - scikit-learn
   run:
-    - python>=3.8
+    - python>=3.11
     - pip
+    - scikit-learn
 
 about:
-  homepage: https://github.com/cbourjau/ort
   license: MIT
   license_file:
     - LICENSE
     - THIRDPARTY.yml
-  description: "A PyO3 based wrapper around onnxruntime with the goal of becoming an independent ONNX runtime."
-  summary: "A performant and user friendly ONNX runtime (based on onnxruntime)."
+  description: ""
+  summary: ""
