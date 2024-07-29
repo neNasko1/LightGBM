@@ -1,8 +1,8 @@
 context:
-  version: "0.1.0"
+  version: "4.5.0"
 
 package:
-  name: qc-lightgbm
+  name: lightgbm
   version: ${{ version }}
 
 source:
@@ -10,25 +10,27 @@ source:
 
 requirements:
   build:
-    - ${{ compiler('cxx') }}
     - python>=3.11
     - pip
     - cmake
     - python-build>=0.10
     - scikit-learn
     - scikit-build-core
+    - ${{ compiler('cxx') }}
+
   host:
     - python>=3.11
     - pip
+    - cmake
+    - python-build>=0.10
     - scikit-learn
+    - scikit-build-core
+    - ${{ compiler('cxx') }}
+
   run:
     - python>=3.11
     - pip
     - scikit-learn
-
-build:
-  script:
-    - sh ./build-python.sh install --nomp --no-isolation
 
 about:
   license: MIT
