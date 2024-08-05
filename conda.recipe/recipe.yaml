@@ -18,19 +18,11 @@ requirements:
     - scikit-build-core
     - ${{ compiler('cxx') }}
 
-  host:
-    - python>=3.11
-    - pip
-    - cmake
-    - python-build>=0.10
-    - scikit-learn
-    - scikit-build-core
-    - ${{ compiler('cxx') }}
-
   run:
     - python>=3.11
     - pip
     - scikit-learn
+    - libstdcxx-ng<=12.0
 
 about:
   license: MIT
