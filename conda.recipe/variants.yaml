@@ -1,5 +1,0 @@
-cxx_compiler:
-  - gxx
-
-cxx_compiler_version:
-  - 12.4
