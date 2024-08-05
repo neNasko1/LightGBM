@@ -1,0 +1,6 @@
+cxx_compiler:
+  - g++ # [linux]
+  - clang # [osx]
+
+cxx_compiler_version:
+  - 12.4 # [linux]
