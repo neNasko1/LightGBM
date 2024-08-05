@@ -13,8 +13,6 @@ jobs:
         include:
           - os: ubuntu-20.04
             target-platform: linux-64
-          - os: windows-latest
-            target-platform: win-64
           - os: macos-14
             target-platform: osx-arm64
     steps:
