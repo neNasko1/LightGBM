@@ -20,6 +20,7 @@ jobs:
         with:
           submodules: 'recursive'
       - name: Build conda package
-        uses: prefix-dev/rattler-build-action@v0.2.11
+        uses: prefix-dev/rattler-build-action@v0.2.13
         with:
           artifact-name: package-${{ matrix.target-platform }}
+          build-args: --variant-config conda.recipe/variants.yaml
