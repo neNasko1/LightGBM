@@ -14,7 +14,6 @@ requirements:
     - pip
     - cmake>=3.18
     - python-build>=0.10
-    - scikit-learn
     - scikit-build-core
     - ${{ compiler('cxx') }}
     - if: linux
