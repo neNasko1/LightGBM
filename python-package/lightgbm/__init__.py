@@ -28,6 +28,8 @@ _version_path = Path(__file__).absolute().parent / "VERSION.txt"
 if _version_path.is_file():
     __version__ = _version_path.read_text(encoding="utf-8").strip()
 
+print("This is an experimental build of LightGBM for QuantCo only.")
+
 __all__ = [
     "Dataset",
     "Booster",
