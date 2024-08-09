@@ -1,0 +1,26 @@
+name: Package
+
+on: [push]
+
+jobs:
+  build:
+    name: Rattler build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-20.04
+            target-platform: linux-64
+          - os: macos-14
+            target-platform: osx-arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+      - name: Build conda package
+        uses: prefix-dev/rattler-build-action@v0.2.13
+        with:
+          artifact-name: package-${{ matrix.target-platform }}
+          build-args: --variant-config conda.recipe/variants.yaml
