@@ -16,9 +16,11 @@ requirements:
     - python-build>=0.10
     - scikit-build-core
     - ${{ compiler('cxx') }}
+
+  host:
     - if: linux
       then:
-        - libstdcxx-ng<=12.3
+        - libstdcxx-ng<=12.0
 
   run:
     - python
