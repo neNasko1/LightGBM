@@ -25,6 +25,7 @@ from lightgbm.compat import PANDAS_INSTALLED, pd_DataFrame, pd_Series
 from .utils import (
     SERIALIZERS,
     assert_all_trees_valid,
+    builtin_objective,
     dummy_obj,
     load_breast_cancer,
     load_digits,
@@ -32,8 +33,8 @@ from .utils import (
     logistic_sigmoid,
     make_synthetic_regression,
     mse_obj,
+    multiclass_custom_objective,
     pickle_and_unpickle_object,
-    sklearn_multiclass_custom_objective,
     softmax,
 )
 
@@ -2929,12 +2930,6 @@ def test_default_objective_and_metric():
 
 @pytest.mark.parametrize("use_weight", [True, False])
 def test_multiclass_custom_objective(use_weight):
-    def custom_obj(y_pred, ds):
-        y_true = ds.get_label()
-        weight = ds.get_weight()
-        grad, hess = sklearn_multiclass_custom_objective(y_true, y_pred, weight)
-        return grad, hess
-
     centers = [[-4, -4], [4, 4], [-4, 4]]
     X, y = make_blobs(n_samples=1_000, centers=centers, random_state=42)
     weight = np.full_like(y, 2)
@@ -2945,7 +2940,7 @@ def test_multiclass_custom_objective(use_weight):
     builtin_obj_bst = lgb.train(params, ds, num_boost_round=10)
     builtin_obj_preds = builtin_obj_bst.predict(X)
 
-    params["objective"] = custom_obj
+    params["objective"] = multiclass_custom_objective
     custom_obj_bst = lgb.train(params, ds, num_boost_round=10)
     custom_obj_preds = softmax(custom_obj_bst.predict(X))
 
@@ -4444,3 +4439,51 @@ def test_quantized_training():
     quant_bst = lgb.train(bst_params, ds, num_boost_round=10)
     quant_rmse = np.sqrt(np.mean((quant_bst.predict(X) - y) ** 2))
     assert quant_rmse < rmse + 6.0
+
+
+@pytest.mark.parametrize("use_weight", [False, True])
+@pytest.mark.parametrize("num_boost_round", [5, 15])
+@pytest.mark.parametrize(
+    "custom_objective, objective_name, df, num_class",
+    [
+        (mse_obj, "regression", make_synthetic_regression(), 1),
+        (
+            multiclass_custom_objective,
+            "multiclass",
+            make_blobs(n_samples=100, centers=[[-4, -4], [4, 4], [-4, 4]], random_state=42),
+            3,
+        ),
+    ],
+)
+@pytest.mark.skipif(getenv("TASK", "") == "cuda", reason="Skip due to ObjectiveFunction not exposed for cuda devices.")
+def test_objective_function_class(use_weight, num_boost_round, custom_objective, objective_name, df, num_class):
+    X, y = df
+    rng = np.random.default_rng()
+    weight = rng.choice([1, 2], y.shape) if use_weight else None
+    lgb_train = lgb.Dataset(X, y, weight=weight, init_score=np.zeros((len(y), num_class)))
+
+    params = {
+        "verbose": -1,
+        "objective": objective_name,
+        "num_class": num_class,
+        "device": "cpu",
+    }
+    builtin_loss = builtin_objective(objective_name, copy.deepcopy(params))
+    builtin_convert_outputs = lgb.ObjectiveFunction(objective_name, copy.deepcopy(params)).convert_outputs
+
+    params["objective"] = builtin_loss
+    booster_exposed = lgb.train(params, lgb_train, num_boost_round=num_boost_round)
+
+    params["objective"] = objective_name
+    booster = lgb.train(params, lgb_train, num_boost_round=num_boost_round)
+
+    params["objective"] = custom_objective
+    booster_custom = lgb.train(params, lgb_train, num_boost_round=num_boost_round)
+
+    np.testing.assert_allclose(booster_exposed.predict(X), booster.predict(X, raw_score=True))
+    np.testing.assert_allclose(booster_exposed.predict(X), booster_custom.predict(X))
+
+    y_pred = np.zeros_like(booster.predict(X, raw_score=True))
+    np.testing.assert_allclose(builtin_loss(y_pred, lgb_train), custom_objective(y_pred, lgb_train))
+
+    np.testing.assert_allclose(builtin_convert_outputs(booster_exposed.predict(X)), booster.predict(X))
