@@ -12,7 +12,7 @@ requirements:
   build:
     - python
     - pip
-    - cmake>=3.18
+    - cmake>=3.28
     - python-build>=0.10
     - scikit-build-core
     - ${{ compiler('cxx') }}
