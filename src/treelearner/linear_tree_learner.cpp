@@ -41,6 +41,9 @@ void LinearTreeLearner::InitLinear(const Dataset* train_data, const int max_leav
   }
   // preallocate the matrix used to calculate linear model coefficients
   int max_num_feat = std::min(max_leaves, train_data_->num_numeric_features());
+  if (!config_->linear_features.empty()) {
+    max_num_feat = std::min(max_num_feat, static_cast<int>(config_->linear_features.size()));
+  }
   XTHX_.clear();
   XTg_.clear();
   for (int i = 0; i < max_leaves; ++i) {
@@ -195,6 +198,9 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
   std::vector<std::vector<int>> leaf_features;
   std::vector<int> leaf_num_features;
   std::vector<std::vector<const float*>> raw_data_ptr;
+  std::set<uint32_t> allowed_features(
+    config_->linear_features.begin(),
+    config_->linear_features.end());
   size_t max_num_features = 0;
   for (int i = 0; i < num_leaves; ++i) {
     std::vector<int> raw_features;
@@ -203,7 +209,6 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
     } else {
       raw_features = tree->branch_features(i);
     }
-    std::sort(raw_features.begin(), raw_features.end());
     auto new_end = std::unique(raw_features.begin(), raw_features.end());
     raw_features.erase(new_end, raw_features.end());
     std::vector<int> numerical_features;
@@ -211,7 +216,7 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
     for (size_t j = 0; j < raw_features.size(); ++j) {
       int feat = train_data_->InnerFeatureIndex(raw_features[j]);
       auto bin_mapper = train_data_->FeatureBinMapper(feat);
-      if (bin_mapper->bin_type() == BinType::NumericalBin) {
+      if (bin_mapper->bin_type() == BinType::NumericalBin && (allowed_features.count(raw_features[j]) || allowed_features.empty())) {
         numerical_features.push_back(feat);
         data_ptr.push_back(train_data_->raw_index(feat));
       }

@@ -1629,6 +1629,7 @@ def test_all_expected_params_are_written_out_to_model_text(tmp_path):
         "[quant_train_renew_leaf: 0]",
         "[stochastic_rounding: 1]",
         "[linear_tree: 0]",
+        "[linear_features: ]",
         "[max_bin: 255]",
         "[max_bin_by_feature: ]",
         "[min_data_in_bin: 3]",
