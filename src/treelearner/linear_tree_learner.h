@@ -110,6 +110,35 @@ class LinearTreeLearner: public SerialTreeLearner {
   }
 
  protected:
+  struct PairConstraint {
+    int feature_idx;
+    double threshold;
+    int other_leaf_idx;
+  };
+
+  std::vector<int> DiscoverMonotoneConstraints(
+    const Tree *tree, const int index, std::vector<std::vector<PairConstraint> > &constrs) const {
+    if (index >= 0) {
+      auto left = DiscoverMonotoneConstraints(tree, tree->left_child(index), constrs);
+      auto right = DiscoverMonotoneConstraints(tree, tree->right_child(index), constrs);
+      if (tree->IsNumericalSplit(index)) {
+        const int feat_idx = tree->split_feature(index);
+        if (config_->monotone_constraints[feat_idx] == -1) {
+          std::swap(left, right);
+        }
+        for (const auto smaller_leaf_num : left) {
+          for (const auto bigger_leaf_num : right) {
+            constrs[bigger_leaf_num].push_back({feat_idx, tree->threshold(index), smaller_leaf_num});
+          }
+        }
+      }
+      left.insert(left.end(), right.begin(), right.end());
+      return left;
+    } else {
+      return { ~index };
+    }
+  }
+
   /*! \brief whether numerical features contain any nan values */
   std::vector<int8_t> contains_nan_;
   /*! whether any numerical feature contains a nan value */

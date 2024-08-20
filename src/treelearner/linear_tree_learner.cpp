@@ -323,8 +323,16 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
   double shrinkage = tree->shrinkage();
   double decay_rate = config_->refit_decay_rate;
   // copy into eigen matrices and solve
-#pragma omp parallel for num_threads(OMP_NUM_THREADS()) schedule(static)
-  for (int leaf_num = 0; leaf_num < num_leaves; ++leaf_num) {
+  const bool constrained = !config_->monotone_constraints.empty();
+  std::vector<int> order(num_leaves);
+  std::vector<std::vector<PairConstraint> > pair_constrs(num_leaves);
+  if (constrained) {
+    order = DiscoverMonotoneConstraints(tree, 0, pair_constrs);
+  } else {
+    std::iota(order.begin(), order.end(), 0);
+  }
+#pragma omp parallel for if(!constrained) num_threads(OMP_NUM_THREADS()) schedule(static)
+  for (const auto &leaf_num : order) {
     if (total_nonzero[leaf_num] < static_cast<int>(leaf_features[leaf_num].size()) + 1) {
       if (is_refit) {
         double old_const = tree->LeafConst(leaf_num);
@@ -355,6 +363,32 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
     std::vector<double> coeffs_vec;
     std::vector<int> features_new;
     std::vector<double> old_coeffs = tree->LeafCoeffs(leaf_num);
+    if (constrained) {
+      for (size_t i = 0; i < leaf_features[leaf_num].size(); ++i) {
+        const int real_fidx = train_data_->RealFeatureIndex(leaf_features[leaf_num][i]);
+        const int constraint = config_->monotone_constraints[real_fidx];
+        if (constraint == 1) {
+          coeffs(i) = std::max(static_cast<double>(0), coeffs(i));
+        } else if (constraint == -1) {
+          coeffs(i) = std::min(static_cast<double>(0), coeffs(i));
+        }
+      }
+      for (const auto &it : pair_constrs[leaf_num]) {
+        double offset = tree->LeafConst(it.other_leaf_idx);
+        for (size_t i = 0; i < leaf_features[leaf_num].size(); ++i) {
+          if (train_data_->RealFeatureIndex(leaf_features[leaf_num][i]) == it.feature_idx) {
+            offset -= it.threshold * coeffs(i);
+          }
+        }
+        const auto other_leaf_features = tree->LeafFeatures(it.other_leaf_idx);
+        for (size_t i = 0; i < other_leaf_features.size(); ++i) {
+          if (other_leaf_features[i] == it.feature_idx) {
+            offset += it.threshold * tree->LeafCoeffs(it.other_leaf_idx)[i];
+          }
+        }
+        coeffs(num_feat) = std::max(coeffs(num_feat), offset);
+      }
+    }
     for (size_t i = 0; i < leaf_features[leaf_num].size(); ++i) {
       if (is_refit) {
         features_new.push_back(leaf_features[leaf_num][i]);

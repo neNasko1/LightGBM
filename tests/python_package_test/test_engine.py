@@ -2094,7 +2094,8 @@ def generate_trainset_for_monotone_constraints_tests(x3_to_category=True):
 
 @pytest.mark.skipif(getenv("TASK", "") == "cuda", reason="Monotone constraints are not yet supported by CUDA version")
 @pytest.mark.parametrize("test_with_categorical_variable", [True, False])
-def test_monotone_constraints(test_with_categorical_variable):
+@pytest.mark.parametrize("linear_tree", [True, False])
+def test_monotone_constraints(test_with_categorical_variable, linear_tree):
     def is_increasing(y):
         return (np.diff(y) >= 0.0).all()
 
@@ -2168,6 +2169,7 @@ def test_monotone_constraints(test_with_categorical_variable):
                 "monotone_constraints": [1, -1, 0],
                 "monotone_constraints_method": monotone_constraints_method,
                 "use_missing": False,
+                "linear_tree": linear_tree
             }
             if test_with_interaction_constraints:
                 params["interaction_constraints"] = [[0], [1], [2]]
