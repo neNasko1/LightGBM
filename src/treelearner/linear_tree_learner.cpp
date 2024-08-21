@@ -323,7 +323,7 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
   double shrinkage = tree->shrinkage();
   double decay_rate = config_->refit_decay_rate;
   // copy into eigen matrices and solve
-  const bool constrained = !config_->monotone_constraints.empty();
+  const bool constrained = !config_->monotone_constraints.empty() && config_->monotone_constraints_method == "advanced";
   std::vector<int> order(num_leaves);
   std::vector<std::vector<PairConstraint> > pair_constrs(num_leaves);
   if (constrained) {
