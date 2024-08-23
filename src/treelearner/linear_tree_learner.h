@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "serial_tree_learner.h"
+#include "monotone_constraints.hpp"
 
 namespace LightGBM {
 
@@ -112,23 +113,49 @@ class LinearTreeLearner: public SerialTreeLearner {
  protected:
   struct PairConstraint {
     int feature_idx;
+    int feature_idx_inner;
     double threshold;
     int other_leaf_idx;
   };
 
+  struct LeafConstraintsInfo {
+    std::vector<PairConstraint> smaller_constraints;
+    std::vector<PairConstraint> larger_constraints;
+    std::vector<BasicConstraint> feat_constraints;
+
+    LeafConstraintsInfo(const int num_features)
+      : smaller_constraints(), larger_constraints(), feat_constraints(num_features) { }
+  };
+
   std::vector<int> DiscoverMonotoneConstraints(
-    const Tree *tree, const int index, std::vector<std::vector<PairConstraint> > &constrs) const {
+    const Tree *tree, const int index, std::vector<LeafConstraintsInfo>& constr_info) const {
     if (index >= 0) {
-      auto left = DiscoverMonotoneConstraints(tree, tree->left_child(index), constrs);
-      auto right = DiscoverMonotoneConstraints(tree, tree->right_child(index), constrs);
-      if (tree->IsNumericalSplit(index)) {
-        const int feat_idx = tree->split_feature(index);
+      if (tree->left_child(index) == index) { // root
+        return {index};
+      }
+      const int feat_idx = tree->split_feature(index);
+      const int feat_idx_inner = tree->split_feature_inner(index);
+      auto left = DiscoverMonotoneConstraints(tree, tree->left_child(index), constr_info);
+      auto right = DiscoverMonotoneConstraints(tree, tree->right_child(index), constr_info);
+      for (const auto it : left) {
+        constr_info[it].feat_constraints[feat_idx_inner].max = std::min(
+          constr_info[it].feat_constraints[feat_idx_inner].max, tree->threshold(index));
+      }
+      for (const auto it : right) {
+        constr_info[it].feat_constraints[feat_idx_inner].min = std::max(
+          constr_info[it].feat_constraints[feat_idx_inner].min, tree->threshold(index));
+      }
+      if (tree->IsNumericalSplit(index) && config_->monotone_constraints[feat_idx] != 0) {
         if (config_->monotone_constraints[feat_idx] == -1) {
           std::swap(left, right);
         }
         for (const auto smaller_leaf_num : left) {
           for (const auto bigger_leaf_num : right) {
-            constrs[bigger_leaf_num].push_back({feat_idx, tree->threshold(index), smaller_leaf_num});
+            std::cout << "Left - Right " << smaller_leaf_num << " " << bigger_leaf_num << std::endl;
+            constr_info[bigger_leaf_num].larger_constraints.push_back(
+              {feat_idx, feat_idx_inner, tree->threshold(index), smaller_leaf_num});
+            constr_info[smaller_leaf_num].smaller_constraints.push_back(
+              {feat_idx, feat_idx_inner, tree->threshold(index), bigger_leaf_num});
           }
         }
       }
