@@ -2062,7 +2062,7 @@ def test_training_on_constructed_subset_without_params(rng):
 
 
 def generate_trainset_for_monotone_constraints_tests(x3_to_category=True):
-    number_of_dpoints = 1000
+    number_of_dpoints = 100
     rng = np.random.default_rng()
     x1_positively_correlated_with_y = rng.uniform(size=number_of_dpoints)
     x2_negatively_correlated_with_y = rng.uniform(size=number_of_dpoints)
@@ -2097,11 +2097,24 @@ def generate_trainset_for_monotone_constraints_tests(x3_to_category=True):
 @pytest.mark.parametrize("test_with_interaction_constraints", [False, True])
 @pytest.mark.parametrize("monotone_constraints_method", ["basic", "intermediate", "advanced"])
 @pytest.mark.parametrize("linear_tree", [True, False])
-def test_monotone_constraints(test_with_categorical_variable, test_with_interaction_constraints, monotone_constraints_method, linear_tree):
-    def is_increasing(y):
+@pytest.mark.parametrize("repeat_test", list(range(100)))
+def test_monotone_constraints(test_with_categorical_variable, test_with_interaction_constraints, monotone_constraints_method, linear_tree, repeat_test):
+    def is_increasing(y, x, learner):
+        print("We are increasing??")
+        for ind in range(len(y) - 1):
+            if y[ind] > y[ind + 1]:
+                print(x[ind], x[ind + 1])
+                print(y[ind], y[ind + 1])
+                print(learner.predict([x[ind]], pred_leaf=True), learner.predict([x[ind+1]], pred_leaf=True))
         return (np.diff(y) >= 0.0).all()
 
-    def is_decreasing(y):
+    def is_decreasing(y, x, learner):
+        print("We are decreasing??")
+        for ind in range(len(y) - 1):
+            if y[ind] < y[ind + 1]:
+                print(x[ind], x[ind + 1])
+                print(y[ind], y[ind + 1])
+                print(learner.predict([x[ind]], pred_leaf=True), learner.predict([x[ind+1]], pred_leaf=True))
         return (np.diff(y) <= 0.0).all()
 
     def is_non_monotone(y):
@@ -2128,8 +2141,8 @@ def test_monotone_constraints(test_with_categorical_variable, test_with_interact
             )
             non_monotone_y = learner.predict(non_monotone_x)
             if not (
-                is_increasing(monotonically_increasing_y)
-                and is_decreasing(monotonically_decreasing_y)
+                is_increasing(monotonically_increasing_y, monotonically_increasing_x, learner)
+                and is_decreasing(monotonically_decreasing_y, monotonically_decreasing_x, learner)
                 and is_non_monotone(non_monotone_y)
             ):
                 return False

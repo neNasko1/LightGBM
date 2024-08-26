@@ -220,6 +220,7 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
     } else {
       raw_features = tree->branch_features(i);
     }
+    std::sort(raw_features.begin(), raw_features.end());
     auto new_end = std::unique(raw_features.begin(), raw_features.end());
     raw_features.erase(new_end, raw_features.end());
     std::vector<int> numerical_features;
@@ -371,11 +372,19 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
     const int leaf_num, Eigen::MatrixXd &coeffs) {
     if (!constrained) { return; }
     size_t num_feat = leaf_features[leaf_num].size();
-    // std::cout << "Fixing " << leaf_num << std::endl;
-    // for (size_t i = 0; i <= num_feat; i ++) {
-    //   std::cout << coeffs(i) << " ";
-    // }
-    // std::cout << std::endl;
+    std::cout << "Fixing " << leaf_num << std::endl;
+    for (const auto it : leaf_features[leaf_num]) {
+      std::cout << it << " ";
+    }
+    std::cout << std::endl;
+    for (const auto it : constrs_info[leaf_num].feat_constraints) {
+      std::cout << "(" << it.min << "|" << it.max << ") ";
+    }
+    std::cout << std::endl;
+    for (size_t i = 0; i <= num_feat; i ++) {
+      std::cout << coeffs(i) << " ";
+    }
+    std::cout << std::endl;
     std::vector<BasicConstraint> coeff_range(num_feat);
     for (size_t i = 0; i < num_feat; ++i) {
       const int real_fidx = train_data_->RealFeatureIndex(leaf_features[leaf_num][i]);
@@ -395,14 +404,14 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
       for (size_t i = 0; i < num_feat; ++i) {
         const int fidx = leaf_features[leaf_num][i];
         const double other_leaf_coeff = get_leaf_coeff(other_leaf_num, fidx);
-        // std::cout << fidx << " " << other_leaf_coeff << " " << coeff_range[i].min << " " << coeff_range[i].max << std::endl;
-        if (combined.second[fidx].max >= 1e200) {
+        std::cout << fidx << " " << other_leaf_coeff << " " << coeff_range[i].min << " " << coeff_range[i].max << std::endl;
+        if (combined.second[fidx].max >= 1e100) {
           coeff_range[i].min = std::max(coeff_range[i].min, other_leaf_coeff);
-        } else if (combined.second[fidx].min <= -1e200) {
+        } else if (combined.second[fidx].min <= -1e100) {
           coeff_range[i].max = std::min(coeff_range[i].max, other_leaf_coeff);
         }
-        // std::cout << fidx << " " << other_leaf_coeff << " " << coeff_range[i].min << " " << coeff_range[i].max << std::endl;
-        // std::cout << "-----" << std::endl;
+        std::cout << fidx << " " << other_leaf_coeff << " " << coeff_range[i].min << " " << coeff_range[i].max << std::endl;
+        std::cout << "-----" << std::endl;
       }
     }
     for (const auto constr : constrs_info[leaf_num].smaller_constraints) {
@@ -426,6 +435,7 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
     }
     for (const auto constr : constrs_info[leaf_num].larger_constraints) {
       const auto other_leaf_num = constr.other_leaf_idx;
+      std::cout << "Checking with " << other_leaf_num << std::endl;
       const auto combined = combine(
         constrs_info[leaf_num].feat_constraints,
         constrs_info[other_leaf_num].feat_constraints);
@@ -440,6 +450,7 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
         } else if (delta < kEpsilon) {
           total_diff += delta * combined.second[fidx].max;
         }
+        std::cout << "adding " << fidx << " " << coeffs(i) << " " << get_leaf_coeff(other_leaf_num, fidx) << " in " << combined.second[fidx].min << " " << combined.second[fidx].max  << std::endl;
       }
       const auto other_leaf_features = tree->LeafFeaturesInner(other_leaf_num);
       for (size_t i = 0; i < other_leaf_features.size(); i ++) {
@@ -454,18 +465,19 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
         } else if (delta < kEpsilon) {
           total_diff += delta * combined.second[fidx].max;
         }
+        std::cout << "adding " << fidx << " " << -delta << " in " << combined.second[fidx].min << " " << combined.second[fidx].max << std::endl;
       }
-      // std::cout << total_diff << std::endl;
+      std::cout << total_diff << std::endl;
       coeffs(num_feat) = std::max(coeffs(num_feat), -total_diff);
     }
     if (abs(coeffs(num_feat)) >= 1e200) {
-      coeffs(num_feat) = 0;
+      coeffs(num_feat) = 1e200;
     }
-    // std::cout << "Final " << std::endl;
-    // for (size_t i = 0; i <= num_feat; i ++) {
-    //   std::cout << coeffs(i) << " ";
-    // }
-    // std::cout << std::endl;
+    std::cout << "Final " << std::endl;
+    for (size_t i = 0; i <= num_feat; i ++) {
+      std::cout << coeffs(i) << " ";
+    }
+    std::cout << std::endl;
   };
 
   std::cout << "Here " << std::endl;
