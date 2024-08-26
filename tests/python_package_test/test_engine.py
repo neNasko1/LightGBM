@@ -2179,8 +2179,8 @@ def test_monotone_constraints(test_with_categorical_variable, test_with_interact
     )
     params = {
         "min_data": 20,
-        "num_leaves": 3,
-        "n_estimators": 2,
+        "num_leaves": 20,
+        "n_estimators": 20,
         "monotone_constraints": [1, -1, 0],
         "monotone_constraints_method": monotone_constraints_method,
         "use_missing": False,

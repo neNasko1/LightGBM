@@ -486,7 +486,7 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
     return true;
   };
 
-  for (int gd_iter = 0; gd_iter < 10; gd_iter ++) {
+  for (int gd_iter = 0; gd_iter < 100; gd_iter ++) {
   for (const auto leaf_num : order) {
     if (total_nonzero[leaf_num] < static_cast<int>(leaf_features[leaf_num].size()) + 1) {
       if (is_refit) {
@@ -519,7 +519,7 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
     std::vector<double> coeffs_vec;
     std::vector<int> features_new;
     std::vector<double> old_coeffs = tree->LeafCoeffs(leaf_num);
-    double learning_rate = 0.01;
+    double learning_rate = 0.05;
     if (!XTHX_mat.isZero()) {
       Eigen::MatrixXd new_coeffs = coeffs - learning_rate * XTHX_mat.fullPivLu().inverse() * (XTHX_mat * coeffs + XTg_mat);
       if (gd_iter != 0 && fix_constraints(leaf_num, new_coeffs)) {
