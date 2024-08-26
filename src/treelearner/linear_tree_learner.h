@@ -151,7 +151,6 @@ class LinearTreeLearner: public SerialTreeLearner {
         }
         for (const auto smaller_leaf_num : left) {
           for (const auto bigger_leaf_num : right) {
-            std::cout << "Left - Right " << smaller_leaf_num << " " << bigger_leaf_num << std::endl;
             constr_info[bigger_leaf_num].larger_constraints.push_back(
               {feat_idx, feat_idx_inner, tree->threshold(index), smaller_leaf_num});
             constr_info[smaller_leaf_num].smaller_constraints.push_back(
