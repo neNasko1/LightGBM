@@ -114,21 +114,38 @@ class LinearTreeLearner: public SerialTreeLearner {
   struct PairConstraint {
     int feature_idx;
     int feature_idx_inner;
-    double threshold;
     int other_leaf_idx;
+    bool is_smaller;
+    std::vector<BasicConstraint> interaction_region;
   };
 
   struct LeafConstraintsInfo {
-    std::vector<PairConstraint> smaller_constraints;
-    std::vector<PairConstraint> larger_constraints;
+    std::vector<PairConstraint> constraints;
     std::vector<BasicConstraint> feat_constraints;
 
     LeafConstraintsInfo(const int num_features)
-      : smaller_constraints(), larger_constraints(), feat_constraints(num_features) { }
+      : constraints(), feat_constraints(num_features) { }
   };
 
   std::vector<int> DiscoverMonotoneConstraints(
     const Tree *tree, const int index, std::vector<LeafConstraintsInfo>& constr_info) const {
+    const auto combine = [](
+      const std::vector<BasicConstraint> &left,
+      const std::vector<BasicConstraint> &right) {
+
+      auto combined = left;
+      bool intersecting = true;
+      for (size_t i = 0; i < left.size(); i ++) {
+        combined[i].min = std::max(combined[i].min, right[i].min);
+        combined[i].max = std::min(combined[i].max, right[i].max);
+        if (combined[i].min > combined[i].max + kEpsilon) {
+          intersecting = false;
+        }
+      }
+
+      return std::make_pair(intersecting, combined);
+    };
+
     if (index >= 0) {
       if (tree->left_child(index) == index) { // root
         return {index};
@@ -151,10 +168,14 @@ class LinearTreeLearner: public SerialTreeLearner {
         }
         for (const auto smaller_leaf_num : left) {
           for (const auto bigger_leaf_num : right) {
-            constr_info[bigger_leaf_num].larger_constraints.push_back(
-              {feat_idx, feat_idx_inner, tree->threshold(index), smaller_leaf_num});
-            constr_info[smaller_leaf_num].smaller_constraints.push_back(
-              {feat_idx, feat_idx_inner, tree->threshold(index), bigger_leaf_num});
+            const auto combined = combine(
+              constr_info[smaller_leaf_num].feat_constraints,
+              constr_info[bigger_leaf_num].feat_constraints);
+            if (!combined.first) { continue; }
+            constr_info[bigger_leaf_num].constraints.push_back(
+              {feat_idx, feat_idx_inner, smaller_leaf_num, false, combined.second});
+            constr_info[smaller_leaf_num].constraints.push_back(
+              {feat_idx, feat_idx_inner, bigger_leaf_num, true, combined.second});
           }
         }
       }
