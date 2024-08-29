@@ -2097,7 +2097,8 @@ def generate_trainset_for_monotone_constraints_tests(x3_to_category=True):
 @pytest.mark.parametrize("test_with_interaction_constraints", [False, True])
 @pytest.mark.parametrize("monotone_constraints_method", ["basic", "intermediate", "advanced"])
 @pytest.mark.parametrize("linear_tree", [True, False])
-def test_monotone_constraints(test_with_categorical_variable, test_with_interaction_constraints, monotone_constraints_method, linear_tree):
+@pytest.mark.parametrize("repeat", range(100))
+def test_monotone_constraints(test_with_categorical_variable, test_with_interaction_constraints, monotone_constraints_method, linear_tree, repeat):
     def is_increasing(y):
         return (np.diff(y) >= 0.0).all()
 
