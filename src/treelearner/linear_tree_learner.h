@@ -5,6 +5,8 @@
 #ifndef LIGHTGBM_TREELEARNER_LINEAR_TREE_LEARNER_H_
 #define LIGHTGBM_TREELEARNER_LINEAR_TREE_LEARNER_H_
 
+#include <Eigen/Dense>
+
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -29,7 +31,7 @@ class LinearTreeLearner: public SerialTreeLearner {
   /*! \brief Create array mapping dataset to leaf index, used for linear trees */
   void GetLeafMap(Tree* tree) const;
 
-  template<bool HAS_NAN>
+  template<bool HAS_NAN, bool USE_MC>
   void CalculateLinear(Tree* tree, bool is_refit, const score_t* gradients, const score_t* hessians, bool is_first_tree) const;
 
   Tree* FitByExistingTree(const Tree* old_tree, const score_t* gradients, const score_t* hessians) const override;
@@ -126,6 +128,9 @@ class LinearTreeLearner: public SerialTreeLearner {
     LeafConstraintsInfo(const int num_features)
       : constraints(), feat_constraints(num_features) { }
   };
+
+  bool FixConstraints(
+    Tree* tree, const std::vector<int> &leaf_features_inner, const std::vector<PairConstraint> &constraints, Eigen::MatrixXd &coeffs) const;
 
   std::vector<int> DiscoverMonotoneConstraints(
     const Tree *tree, const int index, std::vector<LeafConstraintsInfo>& constr_info) const {

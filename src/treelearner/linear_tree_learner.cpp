@@ -123,10 +123,18 @@ Tree* LinearTreeLearner::Train(const score_t* gradients, const score_t *hessians
 
   GetLeafMap(tree_ptr);
 
-  if (has_nan) {
-    CalculateLinear<true>(tree_ptr, false, gradients_, hessians_, is_first_tree);
+  if (config_->monotone_constraints.empty()) {
+    if (has_nan) {
+      CalculateLinear<true, false>(tree_ptr, false, gradients_, hessians_, is_first_tree);
+    } else {
+      CalculateLinear<false, false>(tree_ptr, false, gradients_, hessians_, is_first_tree);
+    }
   } else {
-    CalculateLinear<false>(tree_ptr, false, gradients_, hessians_, is_first_tree);
+    if (has_nan) {
+      CalculateLinear<true, true>(tree_ptr, false, gradients_, hessians_, is_first_tree);
+    } else {
+      CalculateLinear<false, true>(tree_ptr, false, gradients_, hessians_, is_first_tree);
+    }
   }
 
   Log::Debug("Trained a tree with leaves = %d and depth = %d", tree->num_leaves(), cur_depth);
@@ -145,10 +153,18 @@ Tree* LinearTreeLearner::FitByExistingTree(const Tree* old_tree, const score_t* 
     }
   }
   GetLeafMap(tree);
-  if (has_nan) {
-    CalculateLinear<true>(tree, true, gradients, hessians, false);
+  if (config_->monotone_constraints.empty()) {
+    if (has_nan) {
+      CalculateLinear<true, false>(tree, true, gradients, hessians, false);
+    } else {
+      CalculateLinear<false, false>(tree, true, gradients, hessians, false);
+    }
   } else {
-    CalculateLinear<false>(tree, true, gradients, hessians, false);
+    if (has_nan) {
+      CalculateLinear<true, true>(tree, true, gradients, hessians, false);
+    } else {
+      CalculateLinear<false, true>(tree, true, gradients, hessians, false);
+    }
   }
   return tree;
 }
@@ -172,11 +188,100 @@ void LinearTreeLearner::GetLeafMap(Tree* tree) const {
   }
 }
 
+bool LinearTreeLearner::FixConstraints(
+  Tree* tree, const std::vector<int> &leaf_features_inner,
+  const std::vector<LinearTreeLearner::PairConstraint> &constraints, Eigen::MatrixXd &coeffs) const {
+  const auto is_in_leaf_feat = [&](const int other_leaf_num, const int fidx_inner) {
+    const auto other_leaf_features = tree->LeafFeatures(other_leaf_num);
 
-template<bool HAS_NAN>
+    return std::find(other_leaf_features.begin(), other_leaf_features.end(), fidx_inner) != other_leaf_features.end();
+  };
+  const auto get_leaf_coeff = [&](const int other_leaf_num, const int fidx_inner) {
+    const auto other_leaf_features = tree->LeafFeaturesInner(other_leaf_num);
+    const auto it = std::find(other_leaf_features.begin(), other_leaf_features.end(), fidx_inner);
+    if (it == other_leaf_features.end()) {
+      return 0.0;
+    } else {
+      return tree->LeafCoeffs(other_leaf_num)[std::distance(other_leaf_features.begin(), it)];
+    }
+  };
+  size_t num_feat = leaf_features_inner.size();
+  for (size_t i = 0; i < num_feat; ++i) {
+    const int real_fidx = train_data_->RealFeatureIndex(leaf_features_inner[i]);
+    const int constraint = config_->monotone_constraints[real_fidx];
+    if (constraint == 1) {
+      coeffs(i) = std::max(0.0, coeffs(i));
+    } else if (constraint == -1) {
+      coeffs(i) = std::min(0.0, coeffs(i));
+    }
+  }
+  for (const auto &constr : constraints) {
+    const auto other_leaf_num = constr.other_leaf_idx;
+    const auto combined = constr.interaction_region;
+    for (size_t i = 0; i < num_feat; ++i) {
+      const int fidx = leaf_features_inner[i];
+      const double other_leaf_coeff = get_leaf_coeff(other_leaf_num, fidx);
+      // TODO: replace with inf
+      if (constr.is_smaller) {
+        if (combined[fidx].max >= 1e200 && !is_in_leaf_feat(other_leaf_num, fidx)) {
+          coeffs(i) = std::min(0.0, coeffs(i));
+        } else if (combined[fidx].max <= -1e200 && !is_in_leaf_feat(other_leaf_num, fidx)) {
+          coeffs(i) = std::max(0.0, coeffs(i));
+        }
+      } else {
+        if (combined[fidx].max >= 1e200) {
+          coeffs(i) = std::max(other_leaf_coeff, coeffs(i));
+        } else if (combined[fidx].min <= -1e200) {
+          coeffs(i) = std::min(other_leaf_coeff, coeffs(i));
+        }
+      }
+    }
+  }
+  for (const auto &constr : constraints) {
+    const auto other_leaf_num = constr.other_leaf_idx;
+    const auto combined = constr.interaction_region;
+    double total_diff = coeffs(num_feat) - tree->LeafConst(other_leaf_num);
+    if (constr.is_smaller) {
+      total_diff *= -1;
+    }
+    for (size_t i = 0; i < num_feat; i ++) {
+      const int fidx = leaf_features_inner[i];
+      double delta = coeffs(i) - get_leaf_coeff(other_leaf_num, fidx);
+      if (constr.is_smaller) {
+        delta *= -1;
+      }
+      if (delta > kEpsilon) {
+        total_diff += delta * combined[fidx].min;
+      } else if (delta < kEpsilon) {
+        total_diff += delta * combined[fidx].max;
+      }
+    }
+    const auto other_leaf_features = tree->LeafFeaturesInner(other_leaf_num);
+    for (size_t i = 0; i < other_leaf_features.size(); i ++) {
+      const auto fidx = other_leaf_features[i];
+      if (std::find(leaf_features_inner.begin(), leaf_features_inner.end(), fidx) != leaf_features_inner.end()) {
+        continue;
+      }
+      double delta = coeffs(i) - get_leaf_coeff(other_leaf_num, fidx);
+      if (constr.is_smaller) {
+        delta *= -1;
+      }
+      if (delta > kEpsilon) {
+        total_diff += delta * combined[fidx].min;
+      } else if (delta < kEpsilon) {
+        total_diff += delta * combined[fidx].max;
+      }
+    }
+    if (total_diff < 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+
+template<bool HAS_NAN, bool USE_MC>
 void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t* gradients, const score_t* hessians, bool is_first_tree) const {
-  const bool constrained = !config_->monotone_constraints.empty();
-
   tree->SetIsLinear(true);
   int num_leaves = tree->num_leaves();
   int num_threads = OMP_NUM_THREADS();
@@ -187,13 +292,8 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
     return;
   }
 
-  std::vector<int> order(num_leaves);
   std::vector<LeafConstraintsInfo> constrs_info(num_leaves, LeafConstraintsInfo(train_data_->num_features()));
-  if (constrained) {
-    order = DiscoverMonotoneConstraints(tree, 0, constrs_info);
-  } else {
-    std::iota(order.begin(), order.end(), 0);
-  }
+  DiscoverMonotoneConstraints(tree, 0, constrs_info);
 
   // calculate coefficients using the method described in Eq 3 of https://arxiv.org/pdf/1802.05640.pdf
   // the coefficients vector is given by
@@ -335,104 +435,6 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
   double shrinkage = tree->shrinkage();
   double decay_rate = config_->refit_decay_rate;
   // copy into eigen matrices and solve
-
-  const auto get_leaf_coeff = [&](const int other_leaf_num, const int fidx_inner) {
-    const auto other_leaf_features = tree->LeafFeaturesInner(other_leaf_num);
-    const auto it = std::find(other_leaf_features.begin(), other_leaf_features.end(), fidx_inner);
-    if (it == other_leaf_features.end()) {
-      return 0.0;
-    } else {
-      return tree->LeafCoeffs(other_leaf_num)[std::distance(other_leaf_features.begin(), it)];
-    }
-  };
-
-  const auto is_in_leaf_feat = [&](const int other_leaf_num, const int fidx_inner) {
-    return std::find(leaf_features[other_leaf_num].begin(),
-                     leaf_features[other_leaf_num].end(), fidx_inner) != leaf_features[other_leaf_num].end();
-  };
-
-  const auto fix_constraints = [&](
-    const int leaf_num, Eigen::MatrixXd &coeffs) {
-    if (!constrained) { return true; }
-    size_t num_feat = leaf_features[leaf_num].size();
-    std::vector<BasicConstraint> coeff_range(num_feat);
-    for (size_t i = 0; i < num_feat; ++i) {
-      const int real_fidx = train_data_->RealFeatureIndex(leaf_features[leaf_num][i]);
-      const int constraint = config_->monotone_constraints[real_fidx];
-      if (constraint == 1) {
-        coeff_range[i].min = static_cast<double>(0);
-      } else if (constraint == -1) {
-        coeff_range[i].max = static_cast<double>(0);
-      }
-    }
-    for (const auto &constr : constrs_info[leaf_num].constraints) {
-      const auto other_leaf_num = constr.other_leaf_idx;
-      const auto combined = constr.interaction_region;
-      for (size_t i = 0; i < num_feat; ++i) {
-        const int fidx = leaf_features[leaf_num][i];
-        const double other_leaf_coeff = get_leaf_coeff(other_leaf_num, fidx);
-        // TODO: replace with inf
-        if (constr.is_smaller) {
-          if (combined[fidx].max >= 1e200 && !is_in_leaf_feat(other_leaf_num, fidx)) {
-            coeff_range[i].max = std::min(coeff_range[i].max, 0.0);
-          } else if (combined[fidx].max <= -1e200 && !is_in_leaf_feat(other_leaf_num, fidx)) {
-            coeff_range[i].min = std::max(coeff_range[i].min, 0.0);
-          }
-        } else {
-          if (combined[fidx].max >= 1e200) {
-            coeff_range[i].min = std::max(coeff_range[i].min, other_leaf_coeff);
-          } else if (combined[fidx].min <= -1e200) {
-            coeff_range[i].max = std::min(coeff_range[i].max, other_leaf_coeff);
-          }
-        }
-      }
-    }
-    for (size_t i = 0; i < num_feat; ++i) {
-      assert(coeff_range[i].min <= coeff_range[i].max);
-      coeffs(i) = std::min(std::max(coeffs(i), coeff_range[i].min), coeff_range[i].max);
-    }
-    for (const auto &constr : constrs_info[leaf_num].constraints) {
-      const auto other_leaf_num = constr.other_leaf_idx;
-      const auto combined = constr.interaction_region;
-      double total_diff = coeffs(num_feat) - tree->LeafConst(other_leaf_num);
-      if (constr.is_smaller) {
-        total_diff *= -1;
-      }
-      for (size_t i = 0; i < num_feat; i ++) {
-        const int fidx = leaf_features[leaf_num][i];
-        double delta = coeffs(i) - get_leaf_coeff(other_leaf_num, fidx);
-        if (constr.is_smaller) {
-          delta *= -1;
-        }
-        if (delta > kEpsilon) {
-          total_diff += delta * combined[fidx].min;
-        } else if (delta < kEpsilon) {
-          total_diff += delta * combined[fidx].max;
-        }
-      }
-      const auto other_leaf_features = tree->LeafFeaturesInner(other_leaf_num);
-      for (size_t i = 0; i < other_leaf_features.size(); i ++) {
-        const auto fidx = other_leaf_features[i];
-        if (std::find(leaf_features[leaf_num].begin(), leaf_features[leaf_num].end(), fidx) != leaf_features[leaf_num].end()) {
-          continue;
-        }
-        double delta = coeffs(i) - get_leaf_coeff(other_leaf_num, fidx);
-        if (constr.is_smaller) {
-          delta *= -1;
-        }
-        if (delta > kEpsilon) {
-          total_diff += delta * combined[fidx].min;
-        } else if (delta < kEpsilon) {
-          total_diff += delta * combined[fidx].max;
-        }
-      }
-      if (total_diff < 0) {
-        return false;
-      }
-    }
-    return true;
-  };
-
   for (int gd_iter = 0; gd_iter < 100; gd_iter ++) {
     for (int leaf_num = 0; leaf_num < num_leaves; leaf_num ++) {
       if (total_nonzero[leaf_num] < static_cast<int>(leaf_features[leaf_num].size()) + 1) {
@@ -470,7 +472,7 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
         }
         coeffs(num_feat) = tree->LeafConst(leaf_num);
         Eigen::MatrixXd new_coeffs = coeffs - XTHX_mat.fullPivLu().inverse() * (XTHX_mat * coeffs + XTg_mat);
-        if (fix_constraints(leaf_num, new_coeffs)) {
+        if (FixConstraints(tree, leaf_features[leaf_num], constrs_info[leaf_num].constraints, new_coeffs)) {
           coeffs = new_coeffs;
         }
       }
