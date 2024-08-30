@@ -435,6 +435,7 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
   double shrinkage = tree->shrinkage();
   double decay_rate = config_->refit_decay_rate;
   // copy into eigen matrices and solve
+  std::vector<double> learning_rate(num_leaves, 1);
   for (int gd_iter = 0; gd_iter < 100; gd_iter ++) {
     for (int leaf_num = 0; leaf_num < num_leaves; leaf_num ++) {
       if (total_nonzero[leaf_num] < static_cast<int>(leaf_features[leaf_num].size()) + 1) {
@@ -471,9 +472,11 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
           coeffs(i) = tree->LeafCoeffs(leaf_num)[i];
         }
         coeffs(num_feat) = tree->LeafConst(leaf_num);
-        Eigen::MatrixXd new_coeffs = coeffs - XTHX_mat.fullPivLu().inverse() * (XTHX_mat * coeffs + XTg_mat);
+        Eigen::MatrixXd new_coeffs = coeffs - learning_rate[leaf_num] * XTHX_mat.fullPivLu().inverse() * (XTHX_mat * coeffs + XTg_mat);
         if (FixConstraints(tree, leaf_features[leaf_num], constrs_info[leaf_num].constraints, new_coeffs)) {
           coeffs = new_coeffs;
+        } else {
+          learning_rate[leaf_num] /= 2;
         }
       }
       std::vector<double> coeffs_vec;
