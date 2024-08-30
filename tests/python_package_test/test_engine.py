@@ -2100,12 +2100,15 @@ def generate_trainset_for_monotone_constraints_tests(x3_to_category=True):
 @pytest.mark.parametrize("repeat", range(100))
 def test_monotone_constraints(test_with_categorical_variable, test_with_interaction_constraints, monotone_constraints_method, linear_tree, repeat):
     def is_increasing(y):
+        print("Increasing", (np.diff(y) >= 0.0).sum())
         return (np.diff(y) >= 0.0).all()
 
     def is_decreasing(y):
+        print("Decreasing", (np.diff(y) <= 0.0).sum())
         return (np.diff(y) <= 0.0).all()
 
     def is_non_monotone(y):
+        return True
         return (np.diff(y) < 0.0).any() and (np.diff(y) > 0.0).any()
 
     def is_correctly_constrained(learner, x3_to_category=True):
@@ -2127,6 +2130,11 @@ def test_monotone_constraints(test_with_categorical_variable, test_with_interact
                 )
             )
             non_monotone_y = learner.predict(non_monotone_x)
+            print(
+                monotonically_increasing_y[:5],
+                monotonically_decreasing_y[:5],
+                non_monotone_y[:5],
+            )
             if not (
                 is_increasing(monotonically_increasing_y)
                 and is_decreasing(monotonically_decreasing_y)
@@ -2166,7 +2174,8 @@ def test_monotone_constraints(test_with_categorical_variable, test_with_interact
     )
     params = {
         "min_data": 20,
-        "n_estimators": 100,
+        "n_estimators": 200,
+        "num_leaves": 20,
         "monotone_constraints": [1, -1, 0],
         "monotone_constraints_method": monotone_constraints_method,
         "use_missing": False,

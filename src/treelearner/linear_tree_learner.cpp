@@ -188,9 +188,11 @@ void LinearTreeLearner::GetLeafMap(Tree* tree) const {
   }
 }
 
+template<bool USE_MC>
 bool LinearTreeLearner::FixConstraints(
   Tree* tree, const std::vector<int> &leaf_features_inner,
   const std::vector<LinearTreeLearner::PairConstraint> &constraints, Eigen::MatrixXd &coeffs) const {
+  if (!USE_MC) { return true; }
   const auto is_in_leaf_feat = [&](const int other_leaf_num, const int fidx_inner) {
     const auto other_leaf_features = tree->LeafFeatures(other_leaf_num);
 
@@ -293,7 +295,9 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
   }
 
   std::vector<LeafConstraintsInfo> constrs_info(num_leaves, LeafConstraintsInfo(train_data_->num_features()));
-  DiscoverMonotoneConstraints(tree, 0, constrs_info);
+  if (USE_MC) {
+    DiscoverMonotoneConstraints(tree, 0, constrs_info);
+  }
 
   // calculate coefficients using the method described in Eq 3 of https://arxiv.org/pdf/1802.05640.pdf
   // the coefficients vector is given by
@@ -473,7 +477,7 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
         }
         coeffs(num_feat) = tree->LeafConst(leaf_num);
         Eigen::MatrixXd new_coeffs = coeffs - learning_rate[leaf_num] * XTHX_mat.fullPivLu().inverse() * (XTHX_mat * coeffs + XTg_mat);
-        if (FixConstraints(tree, leaf_features[leaf_num], constrs_info[leaf_num].constraints, new_coeffs)) {
+        if (FixConstraints<USE_MC>(tree, leaf_features[leaf_num], constrs_info[leaf_num].constraints, new_coeffs)) {
           coeffs = new_coeffs;
         } else {
           learning_rate[leaf_num] /= 2;

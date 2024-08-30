@@ -114,7 +114,6 @@ class LinearTreeLearner: public SerialTreeLearner {
 
  protected:
   struct PairConstraint {
-    int feature_idx;
     int feature_idx_inner;
     int other_leaf_idx;
     bool is_smaller;
@@ -129,6 +128,7 @@ class LinearTreeLearner: public SerialTreeLearner {
       : constraints(), feat_constraints(num_features) { }
   };
 
+  template<bool USE_MC>
   bool FixConstraints(
     Tree* tree, const std::vector<int> &leaf_features_inner, const std::vector<PairConstraint> &constraints, Eigen::MatrixXd &coeffs) const;
 
@@ -167,6 +167,8 @@ class LinearTreeLearner: public SerialTreeLearner {
         constr_info[it].feat_constraints[feat_idx_inner].min = std::max(
           constr_info[it].feat_constraints[feat_idx_inner].min, tree->threshold(index));
       }
+      std::cout << "here" << std::endl;
+      std::cout << config_->monotone_constraints.size() << " " << feat_idx << std::endl;
       if (tree->IsNumericalSplit(index) && config_->monotone_constraints[feat_idx] != 0) {
         if (config_->monotone_constraints[feat_idx] == -1) {
           std::swap(left, right);
@@ -178,9 +180,9 @@ class LinearTreeLearner: public SerialTreeLearner {
               constr_info[bigger_leaf_num].feat_constraints);
             if (!combined.first) { continue; }
             constr_info[bigger_leaf_num].constraints.push_back(
-              {feat_idx, feat_idx_inner, smaller_leaf_num, false, combined.second});
+              {feat_idx_inner, smaller_leaf_num, false, combined.second});
             constr_info[smaller_leaf_num].constraints.push_back(
-              {feat_idx, feat_idx_inner, bigger_leaf_num, true, combined.second});
+              {feat_idx_inner, bigger_leaf_num, true, combined.second});
           }
         }
       }
