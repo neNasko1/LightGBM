@@ -440,8 +440,75 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
   double decay_rate = config_->refit_decay_rate;
   // copy into eigen matrices and solve
   std::vector<double> learning_rate(num_leaves, 1);
-  for (int gd_iter = 0; gd_iter < 100; gd_iter ++) {
-    for (int leaf_num = 0; leaf_num < num_leaves; leaf_num ++) {
+  if (USE_MC) {
+    for (int gd_iter = 0; gd_iter < 100; gd_iter ++) {
+      for (int leaf_num = 0; leaf_num < num_leaves; leaf_num ++) {
+        if (total_nonzero[leaf_num] < static_cast<int>(leaf_features[leaf_num].size()) + 1) {
+          if (is_refit) {
+            double old_const = tree->LeafConst(leaf_num);
+            tree->SetLeafConst(leaf_num, decay_rate * old_const + (1.0 - decay_rate) * tree->LeafOutput(leaf_num) * shrinkage);
+            tree->SetLeafCoeffs(leaf_num, std::vector<double>(leaf_features[leaf_num].size(), 0));
+            tree->SetLeafFeaturesInner(leaf_num, leaf_features[leaf_num]);
+          } else {
+            tree->SetLeafConst(leaf_num, tree->LeafOutput(leaf_num));
+          }
+          continue;
+        }
+        size_t num_feat = leaf_features[leaf_num].size();
+        Eigen::MatrixXd XTHX_mat(num_feat + 1, num_feat + 1);
+        Eigen::MatrixXd XTg_mat(num_feat + 1, 1);
+        size_t j = 0;
+        for (size_t feat1 = 0; feat1 < num_feat + 1; ++feat1) {
+          for (size_t feat2 = feat1; feat2 < num_feat + 1; ++feat2) {
+            XTHX_mat(feat1, feat2) = XTHX_[leaf_num][j];
+            XTHX_mat(feat2, feat1) = XTHX_mat(feat1, feat2);
+            if ((feat1 == feat2) && (feat1 < num_feat)) {
+              XTHX_mat(feat1, feat2) += config_->linear_lambda;
+            }
+            ++j;
+          }
+          XTg_mat(feat1) = XTg_[leaf_num][feat1];
+        }
+        Eigen::MatrixXd coeffs = Eigen::MatrixXd::Zero(num_feat + 1, 1);
+        if (gd_iter == 0) {
+          coeffs(num_feat) = tree->LeafOutput(leaf_num);
+        } else {
+          for (int i = 0; i < num_feat; i ++) {
+            coeffs(i) = tree->LeafCoeffs(leaf_num)[i];
+          }
+          coeffs(num_feat) = tree->LeafConst(leaf_num);
+          Eigen::MatrixXd new_coeffs = coeffs - learning_rate[leaf_num] * XTHX_mat.fullPivLu().inverse() * (XTHX_mat * coeffs + XTg_mat);
+          if (FixConstraints<USE_MC>(tree, leaf_features[leaf_num], constrs_info[leaf_num].constraints, new_coeffs)) {
+            coeffs = new_coeffs;
+          } else {
+            learning_rate[leaf_num] /= 2;
+          }
+        }
+        std::vector<double> coeffs_vec;
+        for (int i = 0; i < num_feat; i ++) {
+          coeffs_vec.push_back(coeffs(i));
+        }
+        std::vector<int> features_new;
+        std::vector<double> old_coeffs = tree->LeafCoeffs(leaf_num);
+        // update the tree properties
+        tree->SetLeafFeaturesInner(leaf_num, leaf_features[leaf_num]);
+        std::vector<int> features_raw(leaf_features[leaf_num].size());
+        for (size_t i = 0; i < leaf_features[leaf_num].size(); ++i) {
+          features_raw[i] = train_data_->RealFeatureIndex(leaf_features[leaf_num][i]);
+        }
+        tree->SetLeafFeatures(leaf_num, features_raw);
+        tree->SetLeafCoeffs(leaf_num, coeffs_vec);
+        if (is_refit) {
+          double old_const = tree->LeafConst(leaf_num);
+          tree->SetLeafConst(leaf_num, decay_rate * old_const + (1.0 - decay_rate) * coeffs(num_feat) * shrinkage);
+        } else {
+          tree->SetLeafConst(leaf_num, coeffs(num_feat));
+        }
+      }
+    }
+  } else {
+    #pragma omp parallel for num_threads(OMP_NUM_THREADS()) schedule(static)
+    for (int leaf_num = 0; leaf_num < num_leaves; ++leaf_num) {
       if (total_nonzero[leaf_num] < static_cast<int>(leaf_features[leaf_num].size()) + 1) {
         if (is_refit) {
           double old_const = tree->LeafConst(leaf_num);
@@ -468,32 +535,27 @@ void LinearTreeLearner::CalculateLinear(Tree* tree, bool is_refit, const score_t
         }
         XTg_mat(feat1) = XTg_[leaf_num][feat1];
       }
-      Eigen::MatrixXd coeffs = Eigen::MatrixXd::Zero(num_feat + 1, 1);
-      if (gd_iter == 0) {
-        coeffs(num_feat) = tree->LeafOutput(leaf_num);
-      } else {
-        for (int i = 0; i < num_feat; i ++) {
-          coeffs(i) = tree->LeafCoeffs(leaf_num)[i];
-        }
-        coeffs(num_feat) = tree->LeafConst(leaf_num);
-        Eigen::MatrixXd new_coeffs = coeffs - learning_rate[leaf_num] * XTHX_mat.fullPivLu().inverse() * (XTHX_mat * coeffs + XTg_mat);
-        if (FixConstraints<USE_MC>(tree, leaf_features[leaf_num], constrs_info[leaf_num].constraints, new_coeffs)) {
-          coeffs = new_coeffs;
-        } else {
-          learning_rate[leaf_num] /= 2;
-        }
-      }
+      Eigen::MatrixXd coeffs = - XTHX_mat.fullPivLu().inverse() * XTg_mat;
       std::vector<double> coeffs_vec;
-      for (int i = 0; i < num_feat; i ++) {
-        coeffs_vec.push_back(coeffs(i));
-      }
       std::vector<int> features_new;
       std::vector<double> old_coeffs = tree->LeafCoeffs(leaf_num);
-      // update the tree properties
-      tree->SetLeafFeaturesInner(leaf_num, leaf_features[leaf_num]);
-      std::vector<int> features_raw(leaf_features[leaf_num].size());
       for (size_t i = 0; i < leaf_features[leaf_num].size(); ++i) {
-        features_raw[i] = train_data_->RealFeatureIndex(leaf_features[leaf_num][i]);
+        if (is_refit) {
+          features_new.push_back(leaf_features[leaf_num][i]);
+          coeffs_vec.push_back(decay_rate * old_coeffs[i] + (1.0 - decay_rate) * coeffs(i) * shrinkage);
+        } else {
+          if (coeffs(i) < -kZeroThreshold || coeffs(i) > kZeroThreshold) {
+            coeffs_vec.push_back(coeffs(i));
+            int feat = leaf_features[leaf_num][i];
+            features_new.push_back(feat);
+          }
+        }
+      }
+      // update the tree properties
+      tree->SetLeafFeaturesInner(leaf_num, features_new);
+      std::vector<int> features_raw(features_new.size());
+      for (size_t i = 0; i < features_new.size(); ++i) {
+        features_raw[i] = train_data_->RealFeatureIndex(features_new[i]);
       }
       tree->SetLeafFeatures(leaf_num, features_raw);
       tree->SetLeafCoeffs(leaf_num, coeffs_vec);
