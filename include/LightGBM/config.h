@@ -422,6 +422,8 @@ struct Config {
   // desc = linear tree regularization, corresponds to the parameter ``lambda`` in Eq. 3 of `Gradient Boosting with Piece-Wise Linear Regression Trees <https://arxiv.org/pdf/1802.05640.pdf>`__
   double linear_lambda = 0.0;
 
+  std::vector<uint32_t> linear_features;
+
   // alias = min_split_gain
   // check = >=0.0
   // desc = the minimal gain to perform split

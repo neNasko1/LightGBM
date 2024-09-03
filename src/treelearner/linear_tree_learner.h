@@ -5,6 +5,8 @@
 #ifndef LIGHTGBM_TREELEARNER_LINEAR_TREE_LEARNER_H_
 #define LIGHTGBM_TREELEARNER_LINEAR_TREE_LEARNER_H_
 
+#include <Eigen/Dense>
+
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -12,6 +14,7 @@
 #include <vector>
 
 #include "serial_tree_learner.h"
+#include "monotone_constraints.hpp"
 
 namespace LightGBM {
 
@@ -28,7 +31,7 @@ class LinearTreeLearner: public SerialTreeLearner {
   /*! \brief Create array mapping dataset to leaf index, used for linear trees */
   void GetLeafMap(Tree* tree) const;
 
-  template<bool HAS_NAN>
+  template<bool HAS_NAN, bool USE_MC>
   void CalculateLinear(Tree* tree, bool is_refit, const score_t* gradients, const score_t* hessians, bool is_first_tree) const;
 
   Tree* FitByExistingTree(const Tree* old_tree, const score_t* gradients, const score_t* hessians) const override;
@@ -110,6 +113,86 @@ class LinearTreeLearner: public SerialTreeLearner {
   }
 
  protected:
+  struct PairConstraint {
+    int feature_idx_inner;
+    int other_leaf_idx;
+    bool is_smaller;
+    std::vector<BasicConstraint> interaction_region;
+  };
+
+  struct LeafConstraintsInfo {
+    std::vector<PairConstraint> constraints;
+    std::vector<BasicConstraint> feat_constraints;
+
+    LeafConstraintsInfo(const int num_features)
+      : constraints(), feat_constraints(num_features) { }
+  };
+
+  template<bool USE_MC>
+  bool FixConstraints(
+    Tree* tree, const std::vector<int> &leaf_features_inner, const std::vector<PairConstraint> &constraints, Eigen::MatrixXd &coeffs) const;
+
+  std::vector<int> DiscoverMonotoneConstraints(
+    const Tree *tree, const int index, std::vector<LeafConstraintsInfo>& constr_info) const {
+    const auto combine = [](
+      const std::vector<BasicConstraint> &left,
+      const std::vector<BasicConstraint> &right) {
+
+      auto combined = left;
+      bool intersecting = true;
+      for (size_t i = 0; i < left.size(); i ++) {
+        combined[i].min = std::max(combined[i].min, right[i].min);
+        combined[i].max = std::min(combined[i].max, right[i].max);
+        if (combined[i].min > combined[i].max + kEpsilon) {
+          intersecting = false;
+        }
+      }
+
+      return std::make_pair(intersecting, combined);
+    };
+
+    if (index >= 0) {
+      if (tree->left_child(index) == index) { // root
+        return {index};
+      }
+      const int feat_idx = tree->split_feature(index);
+      const int feat_idx_inner = tree->split_feature_inner(index);
+      auto left = DiscoverMonotoneConstraints(tree, tree->left_child(index), constr_info);
+      auto right = DiscoverMonotoneConstraints(tree, tree->right_child(index), constr_info);
+      for (const auto it : left) {
+        constr_info[it].feat_constraints[feat_idx_inner].max = std::min(
+          constr_info[it].feat_constraints[feat_idx_inner].max, tree->threshold(index));
+      }
+      for (const auto it : right) {
+        constr_info[it].feat_constraints[feat_idx_inner].min = std::max(
+          constr_info[it].feat_constraints[feat_idx_inner].min, tree->threshold(index));
+      }
+      std::cout << "here" << std::endl;
+      std::cout << config_->monotone_constraints.size() << " " << feat_idx << std::endl;
+      if (tree->IsNumericalSplit(index) && config_->monotone_constraints[feat_idx] != 0) {
+        if (config_->monotone_constraints[feat_idx] == -1) {
+          std::swap(left, right);
+        }
+        for (const auto smaller_leaf_num : left) {
+          for (const auto bigger_leaf_num : right) {
+            const auto combined = combine(
+              constr_info[smaller_leaf_num].feat_constraints,
+              constr_info[bigger_leaf_num].feat_constraints);
+            if (!combined.first) { continue; }
+            constr_info[bigger_leaf_num].constraints.push_back(
+              {feat_idx_inner, smaller_leaf_num, false, combined.second});
+            constr_info[smaller_leaf_num].constraints.push_back(
+              {feat_idx_inner, bigger_leaf_num, true, combined.second});
+          }
+        }
+      }
+      left.insert(left.end(), right.begin(), right.end());
+      return left;
+    } else {
+      return { ~index };
+    }
+  }
+
   /*! \brief whether numerical features contain any nan values */
   std::vector<int8_t> contains_nan_;
   /*! whether any numerical feature contains a nan value */

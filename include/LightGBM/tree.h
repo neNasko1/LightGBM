@@ -176,6 +176,10 @@ class Tree {
     return threshold_in_bin_[node_idx];
   }
 
+  inline double threshold(int node_idx) const {
+    return threshold_[node_idx];
+  }
+
   /*! \brief Get the number of data points that fall at or below this node*/
   inline int data_count(int node) const { return node >= 0 ? internal_count_[node] : leaf_count_[~node]; }
 

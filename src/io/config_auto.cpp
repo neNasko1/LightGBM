@@ -114,6 +114,7 @@ const std::unordered_map<std::string, std::string>& Config::alias_table() {
   {"model_out", "output_model"},
   {"save_period", "snapshot_freq"},
   {"linear_trees", "linear_tree"},
+  {"linear_features", "linear_feature"},
   {"max_bins", "max_bin"},
   {"subsample_for_bin", "bin_construct_sample_cnt"},
   {"data_seed", "data_random_seed"},
@@ -257,6 +258,7 @@ const std::unordered_set<std::string>& Config::parameter_set() {
   "quant_train_renew_leaf",
   "stochastic_rounding",
   "linear_tree",
+  "linear_features",
   "max_bin",
   "max_bin_by_feature",
   "min_data_in_bin",
@@ -512,6 +514,10 @@ void Config::GetMembersFromString(const std::unordered_map<std::string, std::str
 
   GetBool(params, "linear_tree", &linear_tree);
 
+  if (GetString(params, "linear_features", &tmp_str)) {
+    linear_features = Common::StringToArray<uint32_t>(tmp_str, ',');
+  }
+
   GetInt(params, "max_bin", &max_bin);
   CHECK_GT(max_bin, 1);
 
@@ -734,6 +740,7 @@ std::string Config::SaveMembersToString() const {
   str_buf << "[quant_train_renew_leaf: " << quant_train_renew_leaf << "]\n";
   str_buf << "[stochastic_rounding: " << stochastic_rounding << "]\n";
   str_buf << "[linear_tree: " << linear_tree << "]\n";
+  str_buf << "[linear_features: " << Common::Join(Common::ArrayCast<uint32_t, int>(linear_features), ",") << "]\n";
   str_buf << "[max_bin: " << max_bin << "]\n";
   str_buf << "[max_bin_by_feature: " << Common::Join(max_bin_by_feature, ",") << "]\n";
   str_buf << "[min_data_in_bin: " << min_data_in_bin << "]\n";
@@ -825,6 +832,7 @@ const std::unordered_map<std::string, std::vector<std::string>>& Config::paramet
     {"lambda_l1", {"reg_alpha", "l1_regularization"}},
     {"lambda_l2", {"reg_lambda", "lambda", "l2_regularization"}},
     {"linear_lambda", {}},
+    {"linear_features", {}},
     {"min_gain_to_split", {"min_split_gain"}},
     {"drop_rate", {"rate_drop"}},
     {"max_drop", {}},
@@ -862,6 +870,7 @@ const std::unordered_map<std::string, std::vector<std::string>>& Config::paramet
     {"quant_train_renew_leaf", {}},
     {"stochastic_rounding", {}},
     {"linear_tree", {"linear_trees"}},
+    {"linear_features", {"linear_feature"}},
     {"max_bin", {"max_bins"}},
     {"max_bin_by_feature", {}},
     {"min_data_in_bin", {}},
@@ -1006,6 +1015,7 @@ const std::unordered_map<std::string, std::string>& Config::ParameterTypes() {
     {"quant_train_renew_leaf", "bool"},
     {"stochastic_rounding", "bool"},
     {"linear_tree", "bool"},
+    {"linear_features", "vector<int>"},
     {"max_bin", "int"},
     {"max_bin_by_feature", "vector<int>"},
     {"min_data_in_bin", "int"},

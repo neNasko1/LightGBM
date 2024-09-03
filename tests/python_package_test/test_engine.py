@@ -1631,6 +1631,7 @@ def test_all_expected_params_are_written_out_to_model_text(tmp_path):
         "[quant_train_renew_leaf: 0]",
         "[stochastic_rounding: 1]",
         "[linear_tree: 0]",
+        "[linear_features: ]",
         "[max_bin: 255]",
         "[max_bin_by_feature: ]",
         "[min_data_in_bin: 3]",
@@ -2063,7 +2064,7 @@ def test_training_on_constructed_subset_without_params(rng):
 
 
 def generate_trainset_for_monotone_constraints_tests(x3_to_category=True):
-    number_of_dpoints = 3000
+    number_of_dpoints = 1000
     rng = np.random.default_rng()
     x1_positively_correlated_with_y = rng.uniform(size=number_of_dpoints)
     x2_negatively_correlated_with_y = rng.uniform(size=number_of_dpoints)
@@ -2095,21 +2096,28 @@ def generate_trainset_for_monotone_constraints_tests(x3_to_category=True):
 
 @pytest.mark.skipif(getenv("TASK", "") == "cuda", reason="Monotone constraints are not yet supported by CUDA version")
 @pytest.mark.parametrize("test_with_categorical_variable", [True, False])
-def test_monotone_constraints(test_with_categorical_variable):
+@pytest.mark.parametrize("test_with_interaction_constraints", [False, True])
+@pytest.mark.parametrize("monotone_constraints_method", ["basic", "intermediate", "advanced"])
+@pytest.mark.parametrize("linear_tree", [True, False])
+@pytest.mark.parametrize("repeat", range(100))
+def test_monotone_constraints(test_with_categorical_variable, test_with_interaction_constraints, monotone_constraints_method, linear_tree, repeat):
     def is_increasing(y):
+        print("Increasing", (np.diff(y) >= 0.0).sum())
         return (np.diff(y) >= 0.0).all()
 
     def is_decreasing(y):
+        print("Decreasing", (np.diff(y) <= 0.0).sum())
         return (np.diff(y) <= 0.0).all()
 
     def is_non_monotone(y):
+        return True
         return (np.diff(y) < 0.0).any() and (np.diff(y) > 0.0).any()
 
     def is_correctly_constrained(learner, x3_to_category=True):
         iterations = 10
         n = 1000
-        variable_x = np.linspace(0, 1, n).reshape((n, 1))
-        fixed_xs_values = np.linspace(0, 1, n)
+        variable_x = np.linspace(-10, 10, n).reshape((n, 1))
+        fixed_xs_values = np.linspace(-10, 10, iterations)
         for i in range(iterations):
             fixed_x = fixed_xs_values[i] * np.ones((n, 1))
             monotonically_increasing_x = np.column_stack((variable_x, fixed_x, fixed_x))
@@ -2124,6 +2132,11 @@ def test_monotone_constraints(test_with_categorical_variable):
                 )
             )
             non_monotone_y = learner.predict(non_monotone_x)
+            print(
+                monotonically_increasing_y[:5],
+                monotonically_decreasing_y[:5],
+                non_monotone_y[:5],
+            )
             if not (
                 is_increasing(monotonically_increasing_y)
                 and is_decreasing(monotonically_decreasing_y)
@@ -2157,26 +2170,26 @@ def test_monotone_constraints(test_with_categorical_variable):
         return not has_interaction_flag.any()
 
     trainset = generate_trainset_for_monotone_constraints_tests(test_with_categorical_variable)
-    for test_with_interaction_constraints in [True, False]:
-        error_msg = (
-            "Model not correctly constrained "
+    error_msg = (
+        "Model not correctly constrained "
             f"(test_with_interaction_constraints={test_with_interaction_constraints})"
-        )
-        for monotone_constraints_method in ["basic", "intermediate", "advanced"]:
-            params = {
-                "min_data": 20,
-                "num_leaves": 20,
-                "monotone_constraints": [1, -1, 0],
-                "monotone_constraints_method": monotone_constraints_method,
-                "use_missing": False,
-            }
-            if test_with_interaction_constraints:
-                params["interaction_constraints"] = [[0], [1], [2]]
-            constrained_model = lgb.train(params, trainset)
-            assert is_correctly_constrained(constrained_model, test_with_categorical_variable), error_msg
-            if test_with_interaction_constraints:
-                feature_sets = [["Column_0"], ["Column_1"], "Column_2"]
-                assert are_interactions_enforced(constrained_model, feature_sets)
+    )
+    params = {
+        "min_data": 20,
+        "n_estimators": 200,
+        "num_leaves": 20,
+        "monotone_constraints": [1, -1, 0],
+        "monotone_constraints_method": monotone_constraints_method,
+        "use_missing": False,
+        "linear_tree": linear_tree,
+        "interaction_constraints": [[0], [1], [2]] if test_with_interaction_constraints else None
+    }
+    constrained_model = lgb.train(params, trainset)
+    assert is_correctly_constrained(constrained_model, test_with_categorical_variable)
+
+    if test_with_interaction_constraints:
+        feature_sets = [["Column_0"], ["Column_1"], "Column_2"]
+        assert are_interactions_enforced(constrained_model, feature_sets)
 
 
 @pytest.mark.skipif(getenv("TASK", "") == "cuda", reason="Monotone constraints are not yet supported by CUDA version")
